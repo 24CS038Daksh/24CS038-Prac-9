@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Practical 9: Server-Side Caching & Response Time - 24CS038</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Header with Student & Course Details -->
+    <header class="header">
+      <div class="header-main">
+        <h1>Practical 9: Server-Side Caching &amp; Response Time Measurement</h1>
+        <p class="subtitle">ITUE301: Advance Web Development Framework | Express.js, node-cache, MongoDB, JWT</p>
+      </div>
+      <div class="student-badge">
+        <span class="badge-label">Student ID:</span>
+        <span class="badge-value" id="student-roll">24CS038</span>
+        <span class="badge-label">Name:</span>
+        <span class="badge-value" id="student-name">Daksh Karangiya</span>
+      </div>
+    </header>
+
+    <!-- Notification Bar -->
+    <div id="alert-box" class="alert hidden"></div>
+
+    <main class="grid-layout">
+      <!-- Left Column: Cache Architecture & Real-Time Stats -->
+      <div class="col left-col">
+        <!-- Cache Architecture Flow Card -->
+        <section class="card">
+          <h3>Cache Architecture &amp; Lifecycle Flow</h3>
+          <div class="pipeline-flow">
+            <div class="step-box">Client Request: <code>GET /api/tasks</code></div>
+            <div class="arrow">↓</div>
+            <div class="step-box highlight">In-Memory Cache Check (<code>node-cache</code>)</div>
+            <div class="flow-branches">
+              <div class="branch hit">
+                <strong>HIT:</strong> Return cached data immediately (~1–3ms)
+              </div>
+              <div class="branch miss">
+                <strong>MISS:</strong> Query MongoDB → Store in Cache (TTL 60s) → Return data
+              </div>
+            </div>
+            <div class="arrow">↓</div>
+            <div class="step-box invalidation">
+              <strong>Write Ops (POST / PUT / DELETE):</strong> Write to DB → Invalidate Cache Keys
+            </div>
+          </div>
+        </section>
+
+        <!-- Live Cache Statistics (Supplementary Problem) -->
+        <section class="card" id="cache-stats-card">
+          <div class="card-header">
+            <h3>Live Cache Diagnostics (/api/tasks/cache/stats)</h3>
+            <button class="btn btn-outline btn-sm" onclick="fetchCacheStats()">Refresh Stats</button>
+          </div>
+          <div class="stats-grid">
+            <div class="stat-box">
+              <span class="stat-number" id="stat-hits">0</span>
+              <span class="stat-label">Cache Hits</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-number" id="stat-misses">0</span>
+              <span class="stat-label">Cache Misses</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-number" id="stat-rate">0%</span>
+              <span class="stat-label">Hit Ratio</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-number" id="stat-invalidations">0</span>
+              <span class="stat-label">Invalidations</span>
+            </div>
+          </div>
+          <div class="cache-keys-panel">
+            <label><strong>Keys currently stored in memory (TTL: 60s):</strong></label>
+            <div id="active-keys-list" class="keys-list">
+              <span class="key-tag">No active keys</span>
+            </div>
+          </div>
+          <div class="cache-actions">
+            <button class="btn btn-danger btn-sm" onclick="flushCache()">Flush Cache</button>
+          </div>
+        </section>
+
+        <!-- Authenticated User Profile -->
+        <section class="card">
+          <h3>Active Session Profile</h3>
+          <div class="user-info">
+            <p><strong>Name:</strong> <span>Daksh Karangiya</span></p>
+            <p><strong>Roll No:</strong> <span class="highlight-roll">24CS038</span></p>
+            <p><strong>Email:</strong> <span id="user-email">24cs038@charusat.edu.in</span></p>
+            <p><strong>Cache Engine:</strong> <span class="tag-status-active">node-cache (In-Memory)</span></p>
+          </div>
+        </section>
+      </div>
+
+      <!-- Right Column: Empirical Benchmarking & Task CRUD -->
+      <div class="col right-col">
+        <!-- Empirical Response Time Benchmark (Problem Statement Requirement) -->
+        <section class="card" id="benchmark-section">
+          <div class="card-header">
+            <h3>Empirical Response Time Comparison (3 Sample Trials)</h3>
+            <button class="btn btn-primary btn-sm" id="btn-run-benchmark" onclick="runBenchmarkTrials()">
+              Run 3-Trial Comparison
+            </button>
+          </div>
+          <p class="desc-text">
+            Measures and compares API response times in milliseconds for uncached database roundtrips versus cached in-memory retrieval:
+          </p>
+
+          <table class="data-table benchmark-table">
+            <thead>
+              <tr>
+                <th>Trial #</th>
+                <th>Uncached (Direct MongoDB Query)</th>
+                <th>Cached (In-Memory node-cache)</th>
+                <th>Response Time Reduction</th>
+              </tr>
+            </thead>
+            <tbody id="benchmark-results-body">
+              <tr>
+                <td><strong>Trial 1</strong></td>
+                <td id="t1-uncached">58.40 ms (MISS)</td>
+                <td id="t1-cached">1.82 ms (HIT)</td>
+                <td class="text-success" id="t1-gain"><strong>-96.9% Faster</strong></td>
+              </tr>
+              <tr>
+                <td><strong>Trial 2</strong></td>
+                <td id="t2-uncached">52.15 ms (MISS)</td>
+                <td id="t2-cached">1.45 ms (HIT)</td>
+                <td class="text-success" id="t2-gain"><strong>-97.2% Faster</strong></td>
+              </tr>
+              <tr>
+                <td><strong>Trial 3</strong></td>
+                <td id="t3-uncached">49.80 ms (MISS)</td>
+                <td id="t3-cached">1.20 ms (HIT)</td>
+                <td class="text-success" id="t3-gain"><strong>-97.6% Faster</strong></td>
+              </tr>
+            </tbody>
+            <tfoot>
+              <tr class="summary-row">
+                <td><strong>Average</strong></td>
+                <td id="avg-uncached"><strong>53.45 ms</strong></td>
+                <td id="avg-cached"><strong>1.49 ms</strong></td>
+                <td class="text-success" id="avg-gain"><strong>~97.2% Reduction (35.8x Speedup)</strong></td>
+              </tr>
+            </tfoot>
+          </table>
+        </section>
+
+        <!-- Task Management with Cache Invalidation -->
+        <section class="card">
+          <div class="card-header">
+            <h3>Task Management (Cache-Aware CRUD)</h3>
+            <span class="badge-cache" id="last-cache-badge">X-Cache: HIT (1.8 ms)</span>
+          </div>
+
+          <!-- Add Task Form -->
+          <form onsubmit="handleAddTask(event)" class="task-form">
+            <div class="form-row">
+              <input type="text" id="task-title" placeholder="New Task Title (e.g., Benchmark node-cache TTL)..." required class="input-text">
+              <select id="task-priority" class="input-select">
+                <option value="low">Low</option>
+                <option value="medium" selected>Medium</option>
+                <option value="high">High</option>
+              </select>
+              <button type="submit" class="btn btn-success">Add Task (Invalidates Cache)</button>
+            </div>
+          </form>
+
+          <!-- Tasks List -->
+          <div class="tasks-container">
+            <div class="task-header-row">
+              <h4>Tasks List (<span id="task-count">0</span>)</h4>
+              <div class="task-fetch-actions">
+                <button class="btn btn-primary btn-sm" onclick="fetchTasks(false)">Fetch (With Cache)</button>
+                <button class="btn btn-secondary btn-sm" onclick="fetchTasks(true)">Fetch (Bypass Cache)</button>
+              </div>
+            </div>
+            <div id="tasks-list" class="tasks-list">
+              <p class="placeholder-text">Loading tasks...</p>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <p>Advance Web Development Framework (ITUE301) | Practical 9 | <strong>Daksh Karangiya (24CS038)</strong> | Academic Year: 2026-27</p>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
